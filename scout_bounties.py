@@ -23,6 +23,16 @@ PAYMENT_TERMS = [
     "opire", "algora", "drips", "rewarded"
 ]
 
+ECONOMIC_PRIORITY = {
+    "FUNDED": 5,
+    "VERIFY": 4,
+    "APPLY_FIRST": 3,
+    "UNKNOWN": 2,
+    "UNFUNDED_PROPOSAL": 1,
+    "ALREADY_IMPLEMENTED": 0,
+}
+SUPPRESSED_ECONOMIC_STATUSES = {"UNFUNDED_PROPOSAL", "ALREADY_IMPLEMENTED"}
+
 # GitHub search queries for active bounty opportunities
 SEARCH_QUERIES = [
     'is:issue is:open bounty in:title,body sort:updated-desc',
@@ -100,8 +110,61 @@ def is_clean_candidate(item):
     return True
 
 
+def classify_economic_status(text, payment_hits):
+    """Classify whether a candidate is actually actionable economic work."""
+    already_implemented_terms = [
+        "implementation pr:",
+        "implementation pull request:",
+        "pull request: https://github.com/",
+        "submitted pr:",
+        "submitted pull request:",
+    ]
+    if any(term in text for term in already_implemented_terms):
+        return "ALREADY_IMPLEMENTED"
+
+    unfunded_terms = [
+        "unfunded proposal",
+        "not an approved award",
+        "not an existing award",
+        "not an existing bounty",
+        "proposed amount, not",
+        "proposed amount — not",
+        "proposed amount - not",
+    ]
+    if any(term in text for term in unfunded_terms):
+        return "UNFUNDED_PROPOSAL"
+
+    apply_first_terms = [
+        "wait for assignment",
+        "before coding",
+        "before starting implementation",
+        "apply to work on this issue",
+        "contributor application",
+        "must be assigned",
+    ]
+    if any(term in text for term in apply_first_terms):
+        return "APPLY_FIRST"
+
+    funded_terms = [
+        "funded bounty",
+        "bounty funded",
+        "reward is reserved",
+        "reward reserved",
+        "funds are reserved",
+        "funds reserved",
+        "funded by algora",
+        "funded on algora",
+    ]
+    if any(term in text for term in funded_terms):
+        return "FUNDED"
+
+    if payment_hits:
+        return "VERIFY"
+    return "UNKNOWN"
+
+
 def classify_candidate(item):
-    """Rank for our workflow without pretending payment is verified."""
+    """Rank technical fit and economic actionability independently."""
     title = str(item.get("title", ""))
     body = str(item.get("body", ""))
     text = (title + "\n" + body).lower()
@@ -124,10 +187,13 @@ def classify_candidate(item):
     else:
         fit = "LOW"
 
+    economic_status = classify_economic_status(text, payment_hits)
     payment_status = "SIGNALS_PRESENT" if payment_hits else "UNVERIFIED"
     return {
         "score": score,
         "fit": fit,
+        "economic_status": economic_status,
+        "economic_priority": ECONOMIC_PRIORITY[economic_status],
         "payment_status": payment_status,
         "mobile_ai_signals": mobile_hits[:6],
         "payment_signals": payment_hits[:6],
@@ -226,6 +292,9 @@ def main():
             if classification["fit"] == "LOW":
                 seen_urls.add(url)
                 continue
+            if classification["economic_status"] in SUPPRESSED_ECONOMIC_STATUSES:
+                seen_urls.add(url)
+                continue
 
             new_bounties.append({
                 "title": item.get("title"),
@@ -237,7 +306,11 @@ def main():
             })
 
     new_bounties.sort(
-        key=lambda b: (b["score"], -int(b["comments"] or 0)),
+        key=lambda b: (
+            b["economic_priority"],
+            b["score"],
+            -int(b["comments"] or 0),
+        ),
         reverse=True,
     )
 
@@ -257,7 +330,7 @@ def main():
         notif_lines.append(f"{idx}. *{b['title']}*")
         notif_lines.append(f"   • Repository: `{b['repo']}`")
         notif_lines.append(f"   • Fit: {b['fit']} (score {b['score']})")
-        notif_lines.append(f"   • Payment: {b['payment_status']} — verify before work")
+        notif_lines.append(f"   • Economic status: {b['economic_status']}")
         notif_lines.append(f"   • Comments: {b['comments']}")
         notif_lines.append(f"   • AI/mobile signals: {', '.join(b['mobile_ai_signals']) or 'none'}")
         notif_lines.append(f"   • Link: {b['url']}\n")
@@ -288,10 +361,10 @@ def main():
                 f"#### {idx}. [{b['title']}]({b['url']})\n"
                 f"- **Repository:** [{b['repo']}](https://github.com/{b['repo']})\n"
                 f"- **Fit:** {b['fit']} (score {b['score']})\n"
-                f"- **Payment:** {b['payment_status']} — **not considered verified until the original funding source is checked**\n"
+                f"- **Economic status:** {b['economic_status']}\n"
+                f"- **Payment signals:** {', '.join(b['payment_signals']) or 'none'}\n"
                 f"- **Comments:** {b['comments']}\n"
                 f"- **AI/mobile signals:** {', '.join(b['mobile_ai_signals']) or 'none'}\n"
-                f"- **Payment signals:** {', '.join(b['payment_signals']) or 'none'}\n"
                 f"- **Last Updated:** {b['updated_at']}\n\n"
             )
         delivered = create_github_issue(
