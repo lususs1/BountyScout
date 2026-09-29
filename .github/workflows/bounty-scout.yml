@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 * * * *' # Runs at minute 0 of every single hour, everyday
   workflow_dispatch: # Allows manual trigger from the GitHub Actions UI tab
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scout_bounties.py'
+      - 'test_scout_bounties.py'
+      - '.github/workflows/bounty-scout.yml'
 
 jobs:
   scout:
@@ -21,20 +27,28 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Syntax check
+        run: python -m py_compile scout_bounties.py test_scout_bounties.py
+
+      - name: Run regression tests
+        run: python -m unittest -v test_scout_bounties.py
+
       - name: Run Bounty Scout
+        if: github.event_name != 'pull_request'
         env:
           # Required for GitHub API search and native issue notification
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
+
           # Optional: Configure Telegram notification secrets
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          
+
           # Optional: Configure Discord notification secrets
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python scout_bounties.py
 
       - name: Commit & Push Updated Seen Bounties State
+        if: github.event_name != 'pull_request'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
