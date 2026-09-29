@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 STATE_FILE = "seen_bounties.json"
 MAX_COMMENTS = 12  # Personal profile: prefer lower-competition work
 MAX_PRIORITY_COMMENTS = 3
+COMMENT_REVIEW_LIMIT = 10
 
 MOBILE_AI_TERMS = [
     "documentation", "docs", "readme", "markdown", "typo", "broken link",
@@ -22,6 +23,11 @@ PAYMENT_TERMS = [
     "$", "usd", "usdc", "reward", "bounty", "paid", "payment",
     "opire", "algora", "drips", "rewarded"
 ]
+APPLY_FIRST_LABELS = {
+    "stellar wave",
+    "drips wave",
+    "wave bounty",
+}
 
 ECONOMIC_PRIORITY = {
     "FUNDED": 5,
@@ -32,6 +38,7 @@ ECONOMIC_PRIORITY = {
     "ALREADY_IMPLEMENTED": 0,
 }
 SUPPRESSED_ECONOMIC_STATUSES = {"UNFUNDED_PROPOSAL", "ALREADY_IMPLEMENTED"}
+COMMENT_REVIEW_STATUSES = {"FUNDED", "VERIFY", "APPLY_FIRST"}
 
 # GitHub search queries for active bounty opportunities
 SEARCH_QUERIES = [
@@ -68,9 +75,7 @@ def save_seen_bounties(seen_urls):
         print(f"Error saving state file: {e}")
 
 
-def search_github(query, token=None):
-    """Fetch search results from GitHub Issues API."""
-    url = f"https://api.github.com/search/issues?{urllib.parse.urlencode({'q': query, 'per_page': 15})}"
+def github_headers(token=None):
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "MyPersonalBountyScout",
@@ -78,14 +83,70 @@ def search_github(query, token=None):
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    return headers
 
-    req = urllib.request.Request(url, headers=headers)
+
+def search_github(query, token=None):
+    """Fetch search results from GitHub Issues API."""
+    url = f"https://api.github.com/search/issues?{urllib.parse.urlencode({'q': query, 'per_page': 15})}"
+    req = urllib.request.Request(url, headers=github_headers(token))
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
             return json.loads(response.read().decode("utf-8"))
     except Exception as e:
         print(f"GitHub Search API Error for query '{query}': {e}")
         return {}
+
+
+def fetch_issue_comments(comments_url, token=None):
+    """Fetch issue comments for final economic/actionability review."""
+    if not comments_url:
+        return []
+    separator = "&" if "?" in comments_url else "?"
+    url = f"{comments_url}{separator}per_page=100"
+    req = urllib.request.Request(url, headers=github_headers(token))
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data if isinstance(data, list) else []
+    except Exception as e:
+        print(f"GitHub Comments API Error for '{comments_url}': {e}")
+        return []
+
+
+def extract_label_names(item):
+    """Normalize GitHub label objects/strings to lowercase names."""
+    names = []
+    for label in item.get("labels") or []:
+        if isinstance(label, dict):
+            name = label.get("name")
+        else:
+            name = label
+        if name:
+            names.append(str(name).strip().lower())
+    return sorted(set(names))
+
+
+def repo_from_issue_url(url):
+    """Extract owner/repo from a canonical GitHub issue URL."""
+    prefix = "https://github.com/"
+    if not str(url).startswith(prefix) or "/issues/" not in str(url):
+        return ""
+    return str(url).split("/issues/", 1)[0].replace(prefix, "", 1)
+
+
+def comments_url_from_issue(item):
+    """Return the API comments URL from search data or derive it from html_url."""
+    if item.get("comments_url"):
+        return item["comments_url"]
+    issue_url = str(item.get("html_url", ""))
+    repo = repo_from_issue_url(issue_url)
+    if not repo or "/issues/" not in issue_url:
+        return ""
+    number = issue_url.rsplit("/issues/", 1)[-1].split("/", 1)[0]
+    if not number.isdigit():
+        return ""
+    return f"https://api.github.com/repos/{repo}/issues/{number}/comments"
 
 
 def is_clean_candidate(item):
@@ -110,8 +171,10 @@ def is_clean_candidate(item):
     return True
 
 
-def classify_economic_status(text, payment_hits):
+def classify_economic_status(text, payment_hits, label_names=None):
     """Classify whether a candidate is actually actionable economic work."""
+    label_names = set(label_names or [])
+
     already_implemented_terms = [
         "implementation pr:",
         "implementation pull request:",
@@ -148,7 +211,9 @@ def classify_economic_status(text, payment_hits):
         "contributor application",
         "must be assigned",
     ]
-    if any(term in text for term in apply_first_terms):
+    if label_names.intersection(APPLY_FIRST_LABELS) or any(
+        term in text for term in apply_first_terms
+    ):
         return "APPLY_FIRST"
 
     funded_terms = [
@@ -169,16 +234,51 @@ def classify_economic_status(text, payment_hits):
     return "UNKNOWN"
 
 
+def classify_comment_status(comments):
+    """Use strong comment signals to detect claimed work or application gates."""
+    saw_apply_first = False
+    for comment in comments or []:
+        body = str(comment.get("body", "")).lower()
+        has_pull_url = "github.com/" in body and "/pull/" in body
+        completion_terms = [
+            "/claim",
+            "i have submitted",
+            "submitted a clean",
+            "submitted pr",
+            "submitted pull request",
+            "resolving this issue",
+            "implementation is complete",
+        ]
+        if has_pull_url and any(term in body for term in completion_terms):
+            return "ALREADY_IMPLEMENTED"
+
+        apply_terms = [
+            "has applied to work on this issue",
+            "review their application",
+            "once assigned",
+            "please assign me",
+            "wait for assignment",
+        ]
+        if any(term in body for term in apply_terms):
+            saw_apply_first = True
+
+    if saw_apply_first:
+        return "APPLY_FIRST"
+    return None
+
+
 def classify_candidate(item):
     """Rank technical fit and economic actionability independently."""
     title = str(item.get("title", ""))
     body = str(item.get("body", ""))
     text = (title + "\n" + body).lower()
     comments = int(item.get("comments", 0))
+    label_names = extract_label_names(item)
 
     mobile_hits = sorted({term for term in MOBILE_AI_TERMS if term in text})
     hard_hits = sorted({term for term in HARD_ENV_TERMS if term in text})
-    payment_hits = sorted({term for term in PAYMENT_TERMS if term in text})
+    payment_text = text + "\n" + " ".join(label_names)
+    payment_hits = sorted({term for term in PAYMENT_TERMS if term in payment_text})
 
     score = 0
     score += min(len(mobile_hits) * 2, 8)
@@ -193,7 +293,7 @@ def classify_candidate(item):
     else:
         fit = "LOW"
 
-    economic_status = classify_economic_status(text, payment_hits)
+    economic_status = classify_economic_status(text, payment_hits, label_names)
     payment_status = "SIGNALS_PRESENT" if payment_hits else "UNVERIFIED"
     return {
         "score": score,
@@ -204,6 +304,7 @@ def classify_candidate(item):
         "mobile_ai_signals": mobile_hits[:6],
         "payment_signals": payment_hits[:6],
         "hard_env_signals": hard_hits[:4],
+        "label_signals": label_names[:6],
     }
 
 
@@ -253,12 +354,8 @@ def create_github_issue(repo_fullname, token, title, body):
     """Create a GitHub Issue alert and report whether delivery succeeded."""
     url = f"https://api.github.com/repos/{repo_fullname}/issues"
     payload = {"title": title, "body": body}
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "MyPersonalBountyScout",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Authorization": f"Bearer {token}",
-    }
+    headers = github_headers(token)
+    headers["Content-Type"] = "application/json"
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -272,6 +369,45 @@ def create_github_issue(repo_fullname, token, title, body):
     except Exception as e:
         print(f"Failed to create GitHub Issue notification: {e}")
         return False
+
+
+def sort_bounties(bounties):
+    bounties.sort(
+        key=lambda b: (
+            b["economic_priority"],
+            b["score"],
+            -int(b["comments"] or 0),
+        ),
+        reverse=True,
+    )
+
+
+def review_finalist_comments(new_bounties, github_token, seen_urls):
+    """Review comments for a bounded number of top candidates before alerting."""
+    sort_bounties(new_bounties)
+    checked = 0
+    retained = []
+
+    for bounty in new_bounties:
+        if (
+            checked < COMMENT_REVIEW_LIMIT
+            and bounty["economic_status"] in COMMENT_REVIEW_STATUSES
+            and int(bounty.get("comments") or 0) > 0
+        ):
+            checked += 1
+            comments = fetch_issue_comments(bounty.get("comments_url"), github_token)
+            comment_status = classify_comment_status(comments)
+            if comment_status:
+                bounty["economic_status"] = comment_status
+                bounty["economic_priority"] = ECONOMIC_PRIORITY[comment_status]
+
+        if bounty["economic_status"] in SUPPRESSED_ECONOMIC_STATUSES:
+            seen_urls.add(bounty["url"])
+            continue
+        retained.append(bounty)
+
+    sort_bounties(retained)
+    return retained
 
 
 def main():
@@ -291,6 +427,12 @@ def main():
             url = item.get("html_url")
             if not url or url in seen_urls or any(b["url"] == url for b in new_bounties):
                 continue
+
+            candidate_repo = repo_from_issue_url(url)
+            if repo_fullname and candidate_repo.lower() == repo_fullname.lower():
+                seen_urls.add(url)
+                continue
+
             if not is_clean_candidate(item):
                 continue
 
@@ -305,20 +447,14 @@ def main():
             new_bounties.append({
                 "title": item.get("title"),
                 "url": url,
-                "repo": url.split("/issues/")[0].replace("https://github.com/", ""),
+                "repo": candidate_repo,
+                "comments_url": comments_url_from_issue(item),
                 "comments": item.get("comments"),
                 "updated_at": item.get("updated_at"),
                 **classification,
             })
 
-    new_bounties.sort(
-        key=lambda b: (
-            b["economic_priority"],
-            b["score"],
-            -int(b["comments"] or 0),
-        ),
-        reverse=True,
-    )
+    new_bounties = review_finalist_comments(new_bounties, github_token, seen_urls)
 
     if not new_bounties:
         print("No new bounty opportunities found.")
@@ -369,6 +505,7 @@ def main():
                 f"- **Fit:** {b['fit']} (score {b['score']})\n"
                 f"- **Economic status:** {b['economic_status']}\n"
                 f"- **Payment signals:** {', '.join(b['payment_signals']) or 'none'}\n"
+                f"- **Labels:** {', '.join(b['label_signals']) or 'none'}\n"
                 f"- **Comments:** {b['comments']}\n"
                 f"- **AI/mobile signals:** {', '.join(b['mobile_ai_signals']) or 'none'}\n"
                 f"- **Last Updated:** {b['updated_at']}\n\n"
