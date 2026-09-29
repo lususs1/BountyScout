@@ -36,11 +36,13 @@ ECONOMIC_PRIORITY = {
     "APPLY_FIRST": 3,
     "UNKNOWN": 2,
     "UNFUNDED_PROPOSAL": 1,
+    "NOT_AN_OFFER": 0,
     "CLAIMED": 0,
     "ALREADY_IMPLEMENTED": 0,
 }
 SUPPRESSED_ECONOMIC_STATUSES = {
     "UNFUNDED_PROPOSAL",
+    "NOT_AN_OFFER",
     "CLAIMED",
     "ALREADY_IMPLEMENTED",
 }
@@ -206,6 +208,15 @@ def classify_economic_status(text, payment_hits, label_names=None):
     ):
         return "ALREADY_IMPLEMENTED"
 
+    not_offer_signatures = [
+        ("not a vulnerability report", "bug bounty"),
+        ("this note records", "bounty", "discovery"),
+        ("built for the live", "bounty"),
+        ("shipment status:", "bounty track", "built and tested"),
+    ]
+    if any(all(term in text for term in signature) for signature in not_offer_signatures):
+        return "NOT_AN_OFFER"
+
     unfunded_terms = [
         "unfunded proposal",
         "not an approved award",
@@ -269,6 +280,14 @@ def classify_comment_status(comments):
 
         first_line = body.strip().splitlines()[0].strip() if body.strip() else ""
         if first_line == "/claim" or first_line.startswith("/claim "):
+            return "CLAIMED"
+
+        accepted_application_terms = [
+            "your application was accepted",
+            "application has been accepted",
+            "application was accepted by the repo's maintainers",
+        ]
+        if any(term in body for term in accepted_application_terms):
             return "CLAIMED"
 
         apply_terms = [
