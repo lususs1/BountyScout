@@ -36,9 +36,14 @@ ECONOMIC_PRIORITY = {
     "APPLY_FIRST": 3,
     "UNKNOWN": 2,
     "UNFUNDED_PROPOSAL": 1,
+    "CLAIMED": 0,
     "ALREADY_IMPLEMENTED": 0,
 }
-SUPPRESSED_ECONOMIC_STATUSES = {"UNFUNDED_PROPOSAL", "ALREADY_IMPLEMENTED"}
+SUPPRESSED_ECONOMIC_STATUSES = {
+    "UNFUNDED_PROPOSAL",
+    "CLAIMED",
+    "ALREADY_IMPLEMENTED",
+}
 COMMENT_REVIEW_STATUSES = {"FUNDED", "VERIFY", "APPLY_FIRST"}
 
 # GitHub search queries for active bounty opportunities
@@ -261,6 +266,10 @@ def classify_comment_status(comments):
         ]
         if has_pull_url and any(term in body for term in completion_terms):
             return "ALREADY_IMPLEMENTED"
+
+        first_line = body.strip().splitlines()[0].strip() if body.strip() else ""
+        if first_line == "/claim" or first_line.startswith("/claim "):
+            return "CLAIMED"
 
         apply_terms = [
             "has applied to work on this issue",
