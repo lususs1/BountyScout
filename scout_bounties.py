@@ -115,11 +115,17 @@ def classify_economic_status(text, payment_hits):
     already_implemented_terms = [
         "implementation pr:",
         "implementation pull request:",
-        "pull request: https://github.com/",
         "submitted pr:",
         "submitted pull request:",
     ]
-    if any(term in text for term in already_implemented_terms):
+    has_pull_url = "github.com/" in text and "/pull/" in text
+    has_pull_label = any(
+        label in text
+        for label in ("pull request", "implementation pr", "submitted pr")
+    )
+    if any(term in text for term in already_implemented_terms) or (
+        has_pull_url and has_pull_label
+    ):
         return "ALREADY_IMPLEMENTED"
 
     unfunded_terms = [
