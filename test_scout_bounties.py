@@ -77,7 +77,7 @@ class EconomicStatusTests(unittest.TestCase):
     def test_existing_implementation_pr_is_already_implemented(self):
         result = self._classify(
             "Bounty proposal: sanitize exception disclosure $50 USDC",
-            "Implementation PR: https://github.com/example/repo/pull/19477\n6/6 tests pass.",
+            "**Pull Request:** https://github.com/example/repo/pull/19477\n6/6 tests pass.",
         )
         self.assertEqual(result.get("economic_status"), "ALREADY_IMPLEMENTED")
 
