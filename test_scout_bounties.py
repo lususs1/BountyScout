@@ -58,13 +58,50 @@ class BountyScoutStateTests(unittest.TestCase):
 
         self.assertNotIn(candidate_url, saved)
 
+    def test_own_repository_alert_is_ignored_and_marked_seen(self):
+        candidate_url = "https://github.com/uknwplayer/BountyScout/issues/2"
+        candidate = {
+            "title": "🎯 Bounty Alert: 22 New Opportunities found",
+            "body": "Paid bounty reward audit documentation",
+            "html_url": candidate_url,
+            "comments": 0,
+            "updated_at": "2026-09-29T07:25:42Z",
+            "assignees": [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = os.path.join(tmp, "seen.json")
+            with open(state_file, "w", encoding="utf-8") as fh:
+                json.dump([], fh)
+
+            create_issue = unittest.mock.Mock(return_value=True)
+            env = {
+                "GITHUB_TOKEN": "test-token",
+                "GITHUB_REPOSITORY": "uknwplayer/BountyScout",
+            }
+            with (
+                patch.object(scout, "STATE_FILE", state_file),
+                patch.object(scout, "SEARCH_QUERIES", ["test-query"]),
+                patch.object(scout, "search_github", return_value={"items": [candidate]}),
+                patch.object(scout, "create_github_issue", create_issue),
+                patch.dict(os.environ, env, clear=True),
+            ):
+                scout.main()
+
+            with open(state_file, "r", encoding="utf-8") as fh:
+                saved = json.load(fh)
+
+        create_issue.assert_not_called()
+        self.assertIn(candidate_url, saved)
+
 
 class EconomicStatusTests(unittest.TestCase):
-    def _classify(self, title, body, comments=0):
+    def _classify(self, title, body, comments=0, labels=None):
         return scout.classify_candidate({
             "title": title,
             "body": body,
             "comments": comments,
+            "labels": labels or [],
         })
 
     def test_unfunded_proposal_is_not_treated_as_payable_bounty(self):
@@ -88,6 +125,18 @@ class EconomicStatusTests(unittest.TestCase):
         )
         self.assertEqual(result.get("economic_status"), "APPLY_FIRST")
 
+    def test_stellar_wave_label_is_apply_first(self):
+        result = self._classify(
+            "Harden the price feed",
+            "Tests cover cache hit and upstream failure.",
+            labels=[
+                {"name": "bounty"},
+                {"name": "Stellar Wave"},
+                {"name": "difficulty: medium"},
+            ],
+        )
+        self.assertEqual(result.get("economic_status"), "APPLY_FIRST")
+
     def test_explicit_funded_bounty_is_funded(self):
         result = self._classify(
             "Funded documentation bounty $100 USDC",
@@ -101,6 +150,24 @@ class EconomicStatusTests(unittest.TestCase):
             "Reward offered for an accepted pull request.",
         )
         self.assertEqual(result.get("economic_status"), "VERIFY")
+
+    def test_comment_claim_with_submitted_pr_is_already_implemented(self):
+        status = scout.classify_comment_status([
+            {
+                "body": (
+                    "/claim #814\n"
+                    "I have submitted a complete PR resolving this issue: "
+                    "https://github.com/example/repo/pull/1006"
+                )
+            }
+        ])
+        self.assertEqual(status, "ALREADY_IMPLEMENTED")
+
+    def test_application_comment_is_apply_first(self):
+        status = scout.classify_comment_status([
+            {"body": "@worker has applied to work on this issue as part of the Stellar Wave Program."}
+        ])
+        self.assertEqual(status, "APPLY_FIRST")
 
     def test_unfunded_proposal_is_suppressed_from_alert_and_marked_seen(self):
         candidate_url = "https://github.com/example/project/issues/777"
@@ -126,6 +193,51 @@ class EconomicStatusTests(unittest.TestCase):
             with (
                 patch.object(scout, "STATE_FILE", state_file),
                 patch.object(scout, "search_github", return_value={"items": [candidate]}),
+                patch.object(scout, "create_github_issue", create_issue),
+                patch.dict(os.environ, env, clear=True),
+            ):
+                scout.main()
+
+            with open(state_file, "r", encoding="utf-8") as fh:
+                saved = json.load(fh)
+
+        create_issue.assert_not_called()
+        self.assertIn(candidate_url, saved)
+
+    def test_comment_review_suppresses_claimed_candidate(self):
+        candidate_url = "https://github.com/example/project/issues/814"
+        candidate = {
+            "title": "Harden price feed bounty",
+            "body": "Paid reward for tests and audit work.",
+            "html_url": candidate_url,
+            "comments_url": "https://api.github.com/repos/example/project/issues/814/comments",
+            "comments": 2,
+            "updated_at": "2026-09-29T08:00:00Z",
+            "assignees": [],
+            "labels": [{"name": "bounty"}],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = os.path.join(tmp, "seen.json")
+            with open(state_file, "w", encoding="utf-8") as fh:
+                json.dump([], fh)
+
+            create_issue = unittest.mock.Mock(return_value=True)
+            env = {
+                "GITHUB_TOKEN": "test-token",
+                "GITHUB_REPOSITORY": "uknwplayer/BountyScout",
+            }
+            comments = [{
+                "body": (
+                    "/claim #814\nI have submitted PR: "
+                    "https://github.com/example/project/pull/1006"
+                )
+            }]
+            with (
+                patch.object(scout, "STATE_FILE", state_file),
+                patch.object(scout, "SEARCH_QUERIES", ["test-query"]),
+                patch.object(scout, "search_github", return_value={"items": [candidate]}),
+                patch.object(scout, "fetch_issue_comments", return_value=comments),
                 patch.object(scout, "create_github_issue", create_issue),
                 patch.dict(os.environ, env, clear=True),
             ):
@@ -174,6 +286,7 @@ class EconomicStatusTests(unittest.TestCase):
                 patch.object(scout, "STATE_FILE", state_file),
                 patch.object(scout, "SEARCH_QUERIES", ["test-query"]),
                 patch.object(scout, "search_github", return_value={"items": [verify, funded]}),
+                patch.object(scout, "fetch_issue_comments", return_value=[]),
                 patch.object(scout, "create_github_issue", side_effect=fake_issue),
                 patch.dict(os.environ, env, clear=True),
             ):
