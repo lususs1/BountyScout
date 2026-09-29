@@ -28,6 +28,7 @@ APPLY_FIRST_LABELS = {
     "drips wave",
     "wave bounty",
 }
+META_ALERT_LABELS = {"bounty-alert"}
 
 ECONOMIC_PRIORITY = {
     "FUNDED": 5,
@@ -147,6 +148,15 @@ def comments_url_from_issue(item):
     if not number.isdigit():
         return ""
     return f"https://api.github.com/repos/{repo}/issues/{number}/comments"
+
+
+def is_meta_alert(item):
+    """Recognize scanner-generated alert issues so alerts never become candidates."""
+    label_names = set(extract_label_names(item))
+    title = str(item.get("title", "")).strip().lower()
+    return bool(label_names.intersection(META_ALERT_LABELS)) or title.startswith(
+        "🎯 bounty alert:"
+    )
 
 
 def is_clean_candidate(item):
@@ -430,6 +440,10 @@ def main():
 
             candidate_repo = repo_from_issue_url(url)
             if repo_fullname and candidate_repo.lower() == repo_fullname.lower():
+                seen_urls.add(url)
+                continue
+
+            if is_meta_alert(item):
                 seen_urls.add(url)
                 continue
 
