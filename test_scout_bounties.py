@@ -94,6 +94,43 @@ class BountyScoutStateTests(unittest.TestCase):
         create_issue.assert_not_called()
         self.assertIn(candidate_url, saved)
 
+    def test_bounty_alert_label_from_other_scout_is_ignored_and_marked_seen(self):
+        candidate_url = "https://github.com/dev-kp-eloper/BountyScout/issues/1498"
+        candidate = {
+            "title": "🎯 Bounty Alert: 8 New Opportunities found",
+            "body": "Automated bounty scan with payment signals.",
+            "html_url": candidate_url,
+            "comments": 0,
+            "updated_at": "2026-09-29T08:04:10Z",
+            "assignees": [],
+            "labels": [{"name": "bounty-alert"}],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = os.path.join(tmp, "seen.json")
+            with open(state_file, "w", encoding="utf-8") as fh:
+                json.dump([], fh)
+
+            create_issue = unittest.mock.Mock(return_value=True)
+            env = {
+                "GITHUB_TOKEN": "test-token",
+                "GITHUB_REPOSITORY": "uknwplayer/BountyScout",
+            }
+            with (
+                patch.object(scout, "STATE_FILE", state_file),
+                patch.object(scout, "SEARCH_QUERIES", ["test-query"]),
+                patch.object(scout, "search_github", return_value={"items": [candidate]}),
+                patch.object(scout, "create_github_issue", create_issue),
+                patch.dict(os.environ, env, clear=True),
+            ):
+                scout.main()
+
+            with open(state_file, "r", encoding="utf-8") as fh:
+                saved = json.load(fh)
+
+        create_issue.assert_not_called()
+        self.assertIn(candidate_url, saved)
+
 
 class EconomicStatusTests(unittest.TestCase):
     def _classify(self, title, body, comments=0, labels=None):
