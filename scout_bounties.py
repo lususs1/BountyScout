@@ -7,7 +7,22 @@ from datetime import datetime, timezone
 
 # Configuration
 STATE_FILE = "seen_bounties.json"
-MAX_COMMENTS = 25 # Filter out overcrowded threads
+MAX_COMMENTS = 12 # Personal profile: prefer lower-competition work
+MAX_PRIORITY_COMMENTS = 3
+
+MOBILE_AI_TERMS = [
+    "documentation", "docs", "readme", "markdown", "typo", "broken link",
+    "accessibility", "wcag", "audit", "review", "quality", "test", "bug",
+    "reproduce", "python", "javascript", "typescript", "github"
+]
+HARD_ENV_TERMS = [
+    "android studio", "xcode", "ios device", "gpu required", "cuda",
+    "windows only", "macos only", "hardware required", "onsite"
+]
+PAYMENT_TERMS = [
+    "$", "usd", "usdc", "reward", "bounty", "paid", "payment",
+    "opire", "algora", "drips", "rewarded"
+]
 
 # GitHub search queries for active bounty opportunities
 SEARCH_QUERIES = [
@@ -15,6 +30,10 @@ SEARCH_QUERIES = [
     'is:issue is:open reward bounty sort:updated-desc',
     'is:issue is:open "paid" "PR" "bounty" sort:updated-desc',
     'is:issue is:open "Opire" bounty sort:updated-desc',
+    'is:issue is:open "Algora" bounty sort:updated-desc',
+    'is:issue is:open "USDC" bounty sort:updated-desc',
+    'is:issue is:open "reward" documentation sort:updated-desc',
+    'is:issue is:open "bounty" accessibility sort:updated-desc',
 ]
 
 def load_seen_bounties():
@@ -80,6 +99,40 @@ def is_clean_candidate(item):
         return False
         
     return True
+
+def classify_candidate(item):
+    """Rank for our workflow without pretending payment is verified."""
+    title = str(item.get("title", ""))
+    body = str(item.get("body", ""))
+    text = (title + "\n" + body).lower()
+    comments = int(item.get("comments", 0))
+
+    mobile_hits = sorted({term for term in MOBILE_AI_TERMS if term in text})
+    hard_hits = sorted({term for term in HARD_ENV_TERMS if term in text})
+    payment_hits = sorted({term for term in PAYMENT_TERMS if term in text})
+
+    score = 0
+    score += min(len(mobile_hits) * 2, 8)
+    score += 4 if comments == 0 else 3 if comments <= MAX_PRIORITY_COMMENTS else 1
+    score += min(len(payment_hits), 4)
+    score -= min(len(hard_hits) * 4, 8)
+
+    if score >= 10:
+        fit = "HIGH"
+    elif score >= 6:
+        fit = "MEDIUM"
+    else:
+        fit = "LOW"
+
+    payment_status = "SIGNALS_PRESENT" if payment_hits else "UNVERIFIED"
+    return {
+        "score": score,
+        "fit": fit,
+        "payment_status": payment_status,
+        "mobile_ai_signals": mobile_hits[:6],
+        "payment_signals": payment_hits[:6],
+        "hard_env_signals": hard_hits[:4],
+    }
 
 def send_telegram_notification(token, chat_id, message):
     """Send a notification message via Telegram Bot API."""
@@ -166,14 +219,22 @@ def main():
             url = item.get("html_url")
             if url and url not in seen_urls:
                 if is_clean_candidate(item):
+                    classification = classify_candidate(item)
+                    # Keep medium/high fits. Low-fit results stay out of alerts.
+                    if classification["fit"] == "LOW":
+                        seen_urls.add(url)
+                        continue
                     new_bounties.append({
                         "title": item.get("title"),
                         "url": url,
                         "repo": url.split("/issues/")[0].replace("https://github.com/", ""),
                         "comments": item.get("comments"),
-                        "updated_at": item.get("updated_at")
+                        "updated_at": item.get("updated_at"),
+                        **classification
                     })
                     seen_urls.add(url)
+
+    new_bounties.sort(key=lambda b: (b["score"], -int(b["comments"] or 0)), reverse=True)
 
     if not new_bounties:
         print("No new bounty opportunities found.")
@@ -192,7 +253,10 @@ def main():
     for idx, b in enumerate(new_bounties, start=1):
         notif_lines.append(f"{idx}. *{b['title']}*")
         notif_lines.append(f"   • Repository: `{b['repo']}`")
+        notif_lines.append(f"   • Fit: {b['fit']} (score {b['score']})")
+        notif_lines.append(f"   • Payment: {b['payment_status']} — verify before work")
         notif_lines.append(f"   • Comments: {b['comments']}")
+        notif_lines.append(f"   • AI/mobile signals: {', '.join(b['mobile_ai_signals']) or 'none'}")
         notif_lines.append(f"   • Link: {b['url']}\n")
     
     notification_msg = "\n".join(notif_lines)
@@ -220,7 +284,11 @@ def main():
             issue_body += (
                 f"#### {idx}. [{b['title']}]({b['url']})\n"
                 f"- **Repository:** [{b['repo']}](https://github.com/{b['repo']})\n"
+                f"- **Fit:** {b['fit']} (score {b['score']})\n"
+                f"- **Payment:** {b['payment_status']} — **not considered verified until the original funding source is checked**\n"
                 f"- **Comments:** {b['comments']}\n"
+                f"- **AI/mobile signals:** {', '.join(b['mobile_ai_signals']) or 'none'}\n"
+                f"- **Payment signals:** {', '.join(b['payment_signals']) or 'none'}\n"
                 f"- **Last Updated:** {b['updated_at']}\n\n"
             )
         create_github_issue(repo_fullname, github_token, issue_title, issue_body)
