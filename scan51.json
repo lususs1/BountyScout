@@ -1,0 +1,98 @@
+[
+  {
+    "title": "Auto-close bounty-spam pull requests from outside contributors",
+    "body": "**Why:** bounty-bot pull requests (e.g. #147: a 5-line script that clones the repo, \"Closes #144\", `/claim`, a crypto wallet address) are opened against issues and have to be closed by hand.\n\n**Build:** a workflow that runs when a pull request is opened or edited by someone who isn't a collaborator, reads only the PR's metadata through the API (title, body, changed file list), **never checks out or runs the PR's code**, and closes + locks it (reason: spam) with one neutral comment when either is true:\n- the title or body has bounty markers: `/claim`, `/opire`, `/bounty`, \"Bounty Reward Wallet\", or an EVM wallet address (`0x` + 40 hex);\n- it changes no file under `src/`, `test/`, `tools/`, `sim/`, `docs/`, `notes/`, `art/`, `audio/`, `app/` or `.github/`, and nothing else meaningful (e.g. only a stray script at the root).\n\n**Safety:** `pull_request_target` with `pull-requests: write` and `issues: write` only; no checkout of the head, no secrets, actions pinned to a commit (or the runner's own `gh`). Collaborators are never touched. A `workflow_dispatch` dry-run mode that only reports.\n\n**Tests:** a unit test of the matching rules against #147's body and file list (closed) and #78's (left open).\n\n**Comment text (written as the owner):** \"Closing this automatically: it looks like a bounty or automated pull request rather than a change to the game. This project has no bounties. If this was a real contribution, please open an issue first.\"\n",
+    "labels": [
+      {
+        "name": "improvement"
+      },
+      {
+        "name": "status: ready"
+      },
+      {
+        "name": "needs: developer"
+      }
+    ],
+    "comments": 0,
+    "assignees": [],
+    "html_url": "https://github.com/faizal97/realm-of-loner/issues/148",
+    "updated_at": "2026-10-06T23:54:58Z"
+  },
+  {
+    "title": "health: hunter-22",
+    "body": "Health thread for `hunter-22` (hardening §7). The agent comments here on a regression; 👍/👎 this issue to set repair priority. Machine-managed.\n<br/>\n<hr/>\n\n<details><summary>This repo is using Opire - what does it mean? 👇</summary><br/>💵 Everyone can add rewards for this issue commenting <code>/reward 100</code> (replace <code>100</code> with the amount).<br/>🕵️‍♂️ If someone starts working on this issue to earn the rewards, they can comment <code>/try</code> to let everyone know!<br/>🙌 And when they open the PR, they can comment <code>/claim #4</code> either in the PR description or in a PR's comment.<br/><br/>🪙 Also, everyone can tip any user commenting <code>/tip 20 @github-actions[bot]</code> (replace <code>20</code> with the amount, and <code>@github-actions[bot]</code> with the user to tip).<br/><br/>📖 If you want to learn more, check out our <a href=\"https://docs.opire.dev\">documentation</a>.</details>",
+    "labels": [],
+    "comments": 8,
+    "assignees": [],
+    "html_url": "https://github.com/richa2014/richa-money-agent/issues/4",
+    "updated_at": "2026-10-07T00:56:30Z"
+  },
+  {
+    "title": "Separate archived pre-restoration coverage from current Nukunonu and Bounty audit results",
+    "body": "Raised/recorded: 2026-10-03 UTC. Moderator findings on #558 (merge `7e9979545f91a8ee87bf2068667f97986ecccee3`) and #560 (merge `5a276118e757e5865a5f5d65e2040d91209bf79f`). Follow-up to completed evidence scopes #520/#521.\n\nThe new packets copy old zero-coverage/absent-footprint results into current audit descriptions:\n- Nukunonu assessment.audit.ring_inventory: all 97 rows have all_location_overlap_fraction=0 and absent-footprint status; independent_gshhg_assessment says 0% currently represented.\n- Bounty assessment.audit.osm_ring_inventory: all 27 rows have zero overlap and absent-footprint status; README says the existing audit finds all 27 absent from current location footprints.\n\nBut both merge snapshots' world-index includes `geography/source-restoration-additions.json`, blob `18989f4f6b2789057a00eeda6c5c7e51f06e3caf`. It contains Nukunonu ID `atlas:macro-coverage:location:a0457f0d44c94b71f00d` with 97 polygon components and Bounty ID `atlas:macro-coverage:location:73281d3672f84a47a770` with 27. Every inventory ring bbox matches a published component bbox, and the current source hashes match the packets. Thus the blanket current absence/zero-overlap assertions are stale; this does not prove shoreline completeness or geographic approval.\n\nBounded evidence correction: one coherent PR, maximum two if the independent packets are safer to correct separately. Owned paths are the two packet subdirectories below; coordinate any still-active original ownership before claim. Preserve original pre-restoration comparison reports; do not rewrite original source archives, shared geography, records, certificates, grid or live data.\n\nAcceptance:\n- Explicitly label archived comparison results with their actual inspected baseline/release and date; never present them as current indexed coverage.\n- Recheck each subject against the assigned current release and retain current coverage results separately, with scope/hash and appropriate geographic area method.\n- Correct/supersede README and machine-readable assertions consistently. Verifiers must distinguish source-integrity checks from current coverage checks.\n- Preserve the genuine OSM/GSHHG/official-source disagreements, shoreline uncertainty, shared-parent questions, stable identities and all history. Existing representation does not certify complete coastlines or authorize imports.\n- Coordinate separately tracked parent-count/source-pointer work; do not expand this into a worldwide audit.\n\n<!-- worldatlas-work:v1\n{\"max_prs\":2,\"depends_on\":[],\"mode\":\"geography\",\"owned_paths\":[\"data/regional-review/regional-supplement-e5d72b7004238f80/nukunonu/\",\"data/regional-review/regional-supplement-b5299df90ec984cc/bounty-islands/\"],\"scope\":\"Correct stale current-zero-coverage assertions in two completed island evidence packets; retain historical comparisons and independently verify current indexed coverage; no geographic/live edits\"}\n-->",
+    "labels": [
+      {
+        "name": "kind:work-item"
+      },
+      {
+        "name": "status:ready"
+      },
+      {
+        "name": "status:claimed"
+      },
+      {
+        "name": "type:geography"
+      },
+      {
+        "name": "urgent"
+      },
+      {
+        "name": "follow-up"
+      }
+    ],
+    "comments": 20,
+    "assignees": [],
+    "html_url": "https://github.com/ChengshuLi/WorldAtlas/issues/569",
+    "updated_at": "2026-10-07T03:46:26Z"
+  },
+  {
+    "title": "Question: proof of contributor payments?",
+    "body": "Hi! I'm interested in working on the bounties in this repository.\n\nBefore I invest time, could you share proof that contributors have actually been paid? A transaction hash or a link to a paid-out bounty/issue would be ideal.\n\nThank you!",
+    "labels": [],
+    "comments": 2,
+    "assignees": [],
+    "html_url": "https://github.com/Neurowealth/Backend/issues/577",
+    "updated_at": "2026-10-07T01:46:04Z"
+  },
+  {
+    "title": "Implementer — Reforma controlada del juego desde baseline aceptado",
+    "body": "Parent program: #90\nSource implementation lineage: #97\nSupervisor baseline review: #97 comment 6027670984\n\n## Role\n\nThis Work Item opens a NEW IMPLEMENTER lineage for controlled reform of the game.\n\nSupervisor remains the semantic/review authority.\nImplementer may execute only the scope authorized here or by later explicit Supervisor checkpoints in this Issue.\nHuman product decisions remain superior authority.\n\n## Canonical operational authority\n\nUse the current State C workflow:\n- `workflow/adopted/ANDROID_WORKFLOW.md`\n- `workflow/adopted/ANDROID_UNITY_GAME_PROFILE.md` when materially applicable\n- `workflow/PROJECT_WORKFLOW_OVERLAY.md`\n- current accepted project/game specifications\n\nCanonical workflow lineage:\n`workflow/issue-85-adoption-readiness@f974ca2192f0ba8f1a0341030e7513b4d6f58854`\n\n## Code baseline\n\nBRANCH:\n`dev/game-reform-01`\n\nEXACT CODE BASE:\n`36ab7ed07f50454cf51074300b177032e2777ca4`\n\nThis SHA is Supervisor `SEMANTIC_ACCEPTED` only for the current static implementation/integration-preparation scope.\n\nStill NOT established at this baseline:\n- Unity import/package resolution PASS;\n- clean Unity compile PASS;\n- scene/prefab serialization PASS;\n- executable end-to-end playthrough PASS;\n- Android APK build/install/launch PASS;\n- performance/thermal PASS;\n- Samsung physical validation PASS.\n\nDo not infer any of those.\n\n## Objective\n\nPrepare and execute a controlled reform of the current game without losing accepted behavior, provenance, or exact-SHA reviewability.\n\nThe first checkpoint is mandatory before material reform edits:\nreconstruct the current game from this exact branch and produce a concise reform diagnosis that identifies what should change and why.\n\nThe Implementer must distinguish:\n- gameplay/product change;\n- UX/visual/presentation change;\n- architecture/code-quality change;\n- Unity integration/authoring change;\n- Android/performance change;\n- defect correction.\n\n## CP0 — Reform diagnosis\n\nInspect the actual current code and accepted specifications.\n\nReturn in this Issue:\n\n`CURRENT_BASE_SHA`\n`CURRENT_GAME_SUMMARY`\n`REFORM_TARGETS`\n`DEFECTS_FOUND`\n`PRODUCT_DECISIONS_AFFECTED`\n`SAFE_TECHNICAL_REFORMS`\n`SEMANTIC_REFORMS_REQUIRING_HUMAN_OR_SUPERVISOR_DECISION`\n`PROPOSED_PATH_SCOPE`\n`PROPOSED_CHECKPOINTS`\n`RUNTIME_DEPENDENCIES`\n`RISKS`\n`READY_FOR_REFORM_AUTHORIZATION`\n\nCP0 is inspection/planning only.\nDo not make semantic product changes during CP0.\n\n## Existing product semantics to preserve unless explicitly changed later\n\nCurrent accepted bounded prototype baseline includes:\n- Android-only 3D Christmas runner;\n- Santa/Viejo Pascuero on foot with elf/helper army;\n- one continuous Level 1 route;\n- onboarding -> growth -> positive +N/xN gates -> avoidable obstacle/hammer -> snowball combat -> mandatory one-phase boss -> exactly-once result;\n- helpers protect Santa; no independent baseline Santa HP/hearts;\n- zero helpers = immediate defeat;\n- gates remain positive integer +N/xN only;\n- boss remains mandatory, one phase, no adds;\n- ES + EN;\n- no metagame/kingdom in current prototype;\n- no monetization in current prototype;\n- no runtime mesh fracture requirement.\n\nA requested reform may change one or more of these only after the affected decision is explicitly identified and authorized.\n\n## Authorized scope — CP0\n\n### Semantic scope\nCurrent-state reconstruction and reform proposal only.\n\n### Repository scope\nREAD ONLY during CP0.\n\nAllowed reads include:\n- `Assets/Game/**`\n- `Packages/**`\n- `ProjectSettings/**`\n- current specifications, authority and workflow files\n- relevant Issues/PRs/comments/accepted SHAs\n\n### GitHub operations\nAllowed:\n- read repository/Issues/PRs/commits;\n- post CP0 checkpoint/results to this Issue.\n\nNot yet authorized:\n- repository file changes;\n- gameplay changes;\n- scene/prefab changes;\n- asset import;\n- Unity execution;\n- Android build;\n- external SDK integration;\n- merge;\n- publication/release.\n\n## STOP conditions\n\nSTOP → Supervisor if CP0 discovers:\n- contradiction with frozen/current product authority;\n- unclear Human product intent required for the reform;\n- license/cost/account commitment;\n- destructive/irreversible change;\n- need to modify workflow authority;\n- need to merge/publish/release;\n- inability to distinguish an apparent defect from an intended product rule.\n\n## Verification\n\nBefore returning CP0:\n- EXACT_BASE_VERIFIED: PASS/FAIL\n- CURRENT_AUTHORITY_RECONSTRUCTED: PASS/FAIL\n- CURRENT_GAME_RECONSTRUCTED: PASS/FAIL\n- REFORM_TARGETS_CLASSIFIED: PASS/FAIL\n- PRODUCT_DECISIONS_IDENTIFIED: PASS/FAIL\n- PATH_SCOPE_PROPOSED: PASS/FAIL\n- NO_UNAUTHORIZED_WRITE: PASS/FAIL\n- NO_RUNTIME_PASS_INFERRED: PASS/FAIL\n\n## Required return\n\nISSUE:\nROLE: IMPLEMENTER\nBRANCH:\nBASE_SHA:\nWORKFLOW_AUTHORITY:\nCURRENT_GAME_SUMMARY:\nREFORM_TARGETS:\nDEFECTS_FOUND:\nPRODUCT_DECISIONS_AFFECTED:\nSAFE_TECHNICAL_REFORMS:\nSEMANTIC_REFORMS_REQUIRING_DECISION:\nPROPOSED_PATH_SCOPE:\nPROPOSED_CHECKPOINTS:\nRUNTIME_DEPENDENCIES:\nRISKS:\nVERIFICATION_RESULTS:\nREADY_FOR_REFORM_AUTHORIZATION:\n\nThen STOP for Supervisor review.\n\nDo not self-approve.\nDo not merge.\nDo not publish.\nDo not treat technical capability as workflow authority.",
+    "labels": [],
+    "comments": 20,
+    "assignees": [],
+    "html_url": "https://github.com/cmiloarevalo-hash/juego-1-/issues/100",
+    "updated_at": "2026-10-07T03:51:07Z"
+  },
+  {
+    "title": "Build the UseAgent mobile app for iOS and Android",
+    "body": "People want to check on their agents, answer a question or start a task from their phone. Build the UseAgent mobile app for iOS and Android.\n\n**Where to start**\n- Put it in `apps/mobile/`. Expo (React Native) is the suggested stack; say in a comment first if you want another.\n- Sign-in: the desktop app already signs in through the browser and hands back to the app with a `useagent://` link. Copy that flow from `apps/desktop/src/sign-in.ts` and `apps/desktop/src/auth-client.ts`.\n- API shapes: `packages/agent-client`. The web app's thread view (`frontend/components/chat/`) shows how a thread's live events are read.\n\n**Done when**\n- Sign in through the browser handoff and stay signed in.\n- A thread list, and a thread view that updates live while an agent works.\n- Start a new thread, reply in one, answer an agent's question, approve or deny a request.\n- A push notification when a run finishes, fails or needs your answer. A small backend endpoint to register a device token is fine.\n- Builds that install on a real iPhone and a real Android phone (Expo Go, TestFlight or an APK), and a screen recording of each in the pull request.\n\n**Bounty:** $80, paid after the pull request is merged and the app is verified on both systems.\n\n---\n\n**General asks**\n- Use the app while you work on this, so you see your change the way users will. The hosted app at https://app.useagent.org is the quickest way to get going; a local build works too.\n- Add before and after screenshots, or a short screen recording, to your pull request. For backend or docs work, show the result end to end (the message arriving in Discord, the webhook landing in a test receiver, the rendered docs page).\n- Keep the pull request to one change and run the checks in [CONTRIBUTING.md](https://github.com/useagenthq/useagent/blob/main/CONTRIBUTING.md).\n- To claim it, comment `/take` and the issue is assigned to you, first come, first served. Issues with a bounty label are assigned by a maintainer.\n\n**Using AI tools, and what gets no reply**\n- AI help is fine. Blind AI output is not. You must understand every line you submit, run it yourself, and show it working in the app with your own screenshots or recording.\n- Pull requests that look generated and untested get closed without a reply and labeled `spam`, which also means they don't count for Hacktoberfest. Signs we look for: no proof from a real run, code that ignores this repo's patterns or reinvents helpers that already exist, unrelated files changed, a description that only restates the issue, and failing checks nobody looked at.\n- One pull request per issue, by the person who claimed it. Opening pull requests on issues someone else has taken, or several near-identical pull requests for the same bounty, counts as farming and gets the same treatment.\n- Bounties are paid only for the verified outcome the issue describes (for example, a workshop that actually happened, or an app that works on both systems), never for a write-up, a plan, or an unfinished attempt.\n- When we ask a question in review, answer it in your own words. If you can't explain your change, we can't merge it.\n",
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "help wanted"
+      },
+      {
+        "name": "hacktoberfest"
+      },
+      {
+        "name": "bounty: $80"
+      }
+    ],
+    "comments": 11,
+    "assignees": [],
+    "html_url": "https://github.com/useagenthq/useagent/issues/61",
+    "updated_at": "2026-10-06T23:47:48Z"
+  }
+]
