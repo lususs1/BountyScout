@@ -155,5 +155,39 @@ class Scan50Tests(unittest.TestCase):
             self.assertNotIn(self.paid['html_url'], json.loads(state.read_text()))
 
 
+class Scan54Tests(unittest.TestCase):
+    # Verbatim API snapshots/excerpt retrieved 2026-10-07. StudioOS#1372
+    # returned 404; its alert title is tested separately, not as a body snapshot.
+    items = [{'title': 'commit-monitor: new leads 2026-10-07_0631Z', 'body': '# commit-monitor digest 2026-10-07_0631\n\n38 configured target(s); 38 attempted; 4 coverage error(s).\n\n1401 security-relevant commit lead(s), ranked:\n\n## [17] [SECURITY FIX] disclosed-fix variant analysis — github:nextcloud/server `cfb3c4f99f`\n- **fix(encryption): clarify how to enable server-side encryption**\n- Nextcloud Vulnerability Disclosure · vdp · web · 2026-09-27T00:39:08Z · Josh\n- https://github.com/nextcloud/server/commit/cfb3c4f99f1fa5aae9cda989657ccec589af0922\n  - explicit security-fix signal: security\n  - patch signal: fix\n  - feature introduction: enable \n  - hot paths: admin, set', 'html_url': 'https://github.com/ahmedfuzayl-gif/commit-monitor/issues/121', 'labels': [], 'state': 'open', 'comments': 0, 'assignees': []}, {'title': 'Bootstrap a valid production deployment safely', 'body': "## Problem or idea\n\nThe current source/Compose and component-wheel workflows require operator setup. The easy-install wishlist needs one guided path that establishes a valid composed deployment and explains actionable failures without accepting placeholder production secrets or hiding missing services. This child is limited to: bootstrap a valid production deployment safely.\n\n## Expected outcome\n\nDeliver idempotent initial setup using exact qualified artifacts and normal auth/data boundaries.\n\n## Environment (if relevant)\n\nAstral system; owning repository: AstralDeep. Baseline: `e9a47d8b826dc506dd509b6110a5199ad1cddc42`. Python changes remain compatible with production Python 3.11. Preserve current Keycloak/RFC 8693, owner/tool/PHI/egress/confirmation and audit boundaries. Shared UI changes ship coherent server-owned vocabulary and all affected client dispositions.\n\n## Acceptance checks (optional)\n\n- [ ] Configure real Keycloak/services, local/runtime-only secrets and Plane guarded startup/readiness without mock auth or placeholders.\n- [ ] Use exact qualified component/artifact identities; user completes normal sign-in and in-product encrypted provider configuration.\n- [ ] Test clean-host installation, rerun, failed dependencies/integrity and exit-78 negative cases; stage a successful production-posture bootstrap.\n- [ ] Include deterministic success, edge, denial, failure and recovery tests, at least 90% changed-code coverage, bounded required CI and necessary real-dispatch/staging/client verification in this same contribution.\n\n## Supporting details (optional)\n\nTracking issue: [AstralDeep #246](https://github.com/AstralDeep/AstralDeep/issues/246). **Bounty: 100 recognition points**; this is a separately scoped contribution from the tracker's original 400-point allocation.\n\nDependencies: [AstralDeep #292](https://github.com/AstralDeep/AstralDeep/issues/292).\n\nExisting linked work: [AstralDeep PR #247](https://github.com/AstralDeep/AstralDeep/pull/247); retain its relationship to the tracker and coordinate scope against these acceptance checks.\n\nOne PR earns one bounty award after a qualifying main merge closes its matching child issue. The parent is a non-bounty tracker; mentioning or closing it does not award points. Avoid a PR closing multiple eligible bounty issues.\n\nDecomposition reference: `wishlist-20261005/install_bootstrap`.\n\nSource evidence:\n- [Current setup entry point](https://github.com/AstralDeep/AstralDeep/blob/e9a47d8b826dc506dd509b6110a5199ad1cddc42/README.md)\n- [Existing composed deployment](https://github.com/AstralDeep/AstralDeep/blob/e9a47d8b826dc506dd509b6110a5199ad1cddc42/docker-compose.yml)\n- [Exact local component-wheel workflow](https://github.com/AstralDeep/AstralDeep/blob/e9a47d8b826dc506dd509b6110a5199ad1cddc42/scripts/install_local_components.py)\n", 'html_url': 'https://github.com/AstralDeep/AstralDeep/issues/293', 'labels': [{'name': 'enhancement', 'color': 'a2eeef', 'description': 'New feature or request'}, {'name': 'bounty', 'color': '6366F1', 'description': 'Approved points-based community task'}, {'name': 'points:100', 'color': '8B5CF6', 'description': '100 recognition points'}, {'name': 'track:security', 'color': '06B6D4', 'description': 'Security, authority, and LETS'}, {'name': 'track:reusability', 'color': '06B6D4', 'description': 'Independent reusable components'}, {'name': 'priority:P2', 'color': 'D4A72C', 'description': 'Normal priority'}], 'state': 'open', 'comments': 1, 'assignees': []}]
+
+    def test_digest_is_meta_alert(self):
+        self.assertTrue(scout.is_meta_alert(self.items[0]))
+
+    def test_recognition_points_are_not_cash(self):
+        self.assertEqual(scout.classify_candidate(self.items[1])['economic_status'], 'NOT_AN_OFFER')
+
+    def test_separate_cash_reward_on_points_task_survives(self):
+        item = dict(self.items[1], body=self.items[1]['body'] + '\nBounty: $80 for this contribution.')
+        self.assertIn(scout.classify_candidate(item)['economic_status'], {'VERIFY', 'FUNDED'})
+
+    def test_paid_top_up_alert_title_is_not_offer(self):
+        item = {'title': 'AI spend: per-licence caps, and a paid top-up behind "Add tokens" (D629, migration 419)', 'body': '', 'labels': ['state:ready']}
+        self.assertEqual(scout.classify_candidate(item)['economic_status'], 'NOT_AN_OFFER')
+        item['body'] = 'Bounty: $80 for implementing this feature.'
+        self.assertIn(scout.classify_candidate(item)['economic_status'], {'VERIFY', 'FUNDED'})
+
+    def test_main_excludes_digest_and_points_without_network_or_alert(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with (patch.object(scout, 'STATE_FILE', str(Path(tmp) / 'seen.json')),
+                  patch.object(scout, 'SEARCH_QUERIES', ['test']),
+                  patch.object(scout, 'search_github', return_value={'items': self.items}),
+                  patch.object(scout, 'fetch_review_resource') as read,
+                  patch.object(scout, 'create_github_issue') as notify,
+                  patch.dict(os.environ, {}, clear=True)):
+                scout.main()
+            read.assert_not_called()
+            notify.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -164,6 +164,9 @@ def is_meta_alert(item):
     title = str(item.get("title", "")).strip().lower()
     return bool(label_names.intersection(META_ALERT_LABELS)) or title.startswith(
         "🎯 bounty alert:"
+    ) or (
+        title.startswith("commit-monitor: new leads ")
+        and str(item.get("body", "")).lower().startswith("# commit-monitor digest ")
     )
 
 
@@ -212,10 +215,21 @@ def classify_economic_status(text, payment_hits, label_names=None):
         return "NOT_AN_OFFER"
 
     title = text.splitlines()[0] if text else ""
+    # Recognition points are not a monetary contributor reward. A separate
+    # explicit cash offer still qualifies for normal economic review.
+    cash_offer = re.search(
+        r"(?:\bbounty\s*:?\s*\$\s*\d|\bfunded bounty\s*\$\s*\d|"
+        r"\b(?:reward|bounty)\s*:?\s*\d+(?:\.\d+)?\s*(?:usd|usdc|usdt)\b|"
+        r"\bwe (?:will )?pay\s*\$\s*\d)",
+        text + " " + " ".join(label_names),
+    )
+    if re.search(r"\bbounty\s*:\s*\d+\s+recognition points\b", text) and not cash_offer:
+        return "NOT_AN_OFFER"
     # Product workflows describe payments to their users, not this contributor.
     product_flow = any(all(term in text for term in signature) for signature in (
         ("acceptance criteria", "post form", "bounty amount", "src/pages/"),
         ("acceptance criteria", "bounty flow", "seeded demo data"),
+        ("ai spend:", "paid top-up", "add tokens"),
     ))
     explicit_offer = re.search(
         r"(?:\bbounty\s*:?\s*\$\s*\d|\bfunded bounty\b|"
