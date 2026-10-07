@@ -10,6 +10,8 @@ on:
       - 'scout_bounties.py'
       - 'test_scout_bounties.py'
       - 'test_claim_detection.py'
+      - 'test_scan51.py'
+      - 'tests/scan51.json'
       - '.github/workflows/bounty-scout.yml'
 
 jobs:
@@ -29,10 +31,10 @@ jobs:
           python-version: '3.x'
 
       - name: Syntax check
-        run: python -m py_compile scout_bounties.py test_scout_bounties.py test_claim_detection.py
+        run: python -m py_compile scout_bounties.py test_scout_bounties.py test_claim_detection.py test_scan51.py
 
       - name: Run regression tests
-        run: python -m unittest -v test_scout_bounties.py test_claim_detection.py
+        run: python -m unittest -v test_scout_bounties.py test_claim_detection.py test_scan51.py
 
       - name: Run Bounty Scout
         if: github.event_name != 'pull_request'
