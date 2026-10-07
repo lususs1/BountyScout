@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
@@ -168,6 +169,13 @@ def is_meta_alert(item):
 
 def is_clean_candidate(item):
     """Triage logic to filter out noisy, assigned, closed, or spam tasks."""
+    if item.get("state") == "closed":
+        return False
+    if set(extract_label_names(item)).intersection({
+        "state:in-progress", "status:in-progress", "in-progress", "in progress",
+        "status:claimed", "state:claimed",
+    }):
+        return False
     if "pull_request" in item:
         return False
     if item.get("assignees"):
@@ -191,6 +199,36 @@ def is_clean_candidate(item):
 def classify_economic_status(text, payment_hits, label_names=None):
     """Classify whether a candidate is actually actionable economic work."""
     label_names = set(label_names or [])
+
+    if any(re.fullmatch(r"status\s*:\s*claimed", label) for label in label_names):
+        return "CLAIMED"
+
+    if re.search(
+        r"\b(?:this (?:project|repo(?:sitory)?|issue) (?:has|offers) no bounties|"
+        r"no bounty (?:is |will be )?(?:offered|available)|"
+        r"(?:we|this project|this repository) (?:do not|does not|don't|doesn't) offer bounties)\b",
+        text,
+    ):
+        return "NOT_AN_OFFER"
+
+    title = text.splitlines()[0] if text else ""
+    # Product workflows describe payments to their users, not this contributor.
+    product_flow = any(all(term in text for term in signature) for signature in (
+        ("acceptance criteria", "post form", "bounty amount", "src/pages/"),
+        ("acceptance criteria", "bounty flow", "seeded demo data"),
+    ))
+    explicit_offer = re.search(
+        r"(?:\bbounty\s*:?\s*\$\s*\d|\bfunded bounty\b|"
+        r"\breward offered for\b|\bwe (?:will )?pay\b)",
+        text + " " + " ".join(label_names),
+    )
+    if product_flow and not explicit_offer:
+        return "NOT_AN_OFFER"
+    if re.search(r"\b(?:question|proof)\b", title) and re.search(
+        r"\b(?:proof of (?:contributor )?payments|contributors have actually been paid)\b",
+        text,
+    ) and not re.search(r"(?:\$|\busd\s*)\s*\d", text + " " + " ".join(label_names)):
+        return "NOT_AN_OFFER"
 
     already_implemented_terms = [
         "implementation pr:",
@@ -310,6 +348,11 @@ def classify_candidate(item):
     title = str(item.get("title", ""))
     body = str(item.get("body", ""))
     text = (title + "\n" + body).lower()
+    # Opire's help block describes commands, not a reward on this issue.
+    text = re.sub(
+        r"<details\b[^>]*>\s*<summary[^>]*>this repo is using opire\b.*?</details>",
+        "", text, flags=re.DOTALL,
+    )
     comments = int(item.get("comments", 0))
     label_names = extract_label_names(item)
 
@@ -420,6 +463,87 @@ def sort_bounties(bounties):
     )
 
 
+def fetch_review_resource(url, token=None, collection=False):
+    """Read canonical GitHub resources; incomplete reviews remain retryable."""
+    results = []
+    for page in range(1, 11):
+        request_url = url + f"?per_page=100&page={page}" if collection else url
+        try:
+            req = urllib.request.Request(request_url, headers=github_headers(token))
+            with urllib.request.urlopen(req, timeout=15) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except Exception as e:
+            print(f"GitHub final review failed for '{url}': {e}")
+            return None
+        if not collection:
+            return data if isinstance(data, dict) else None
+        if not isinstance(data, list):
+            return None
+        results.extend(data)
+        if len(data) < 100:
+            return results
+    return None
+
+
+def refresh_finalists(bounties, token):
+    """Recheck up to ten finalists immediately before comment review/alerting."""
+    sort_bounties(bounties)
+    retained = []
+    for bounty in bounties[:COMMENT_REVIEW_LIMIT]:
+        match = re.fullmatch(r"https://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)", bounty["url"])
+        if not match:
+            continue
+        repo, number = match.groups()
+        base = f"https://api.github.com/repos/{repo}"
+        issue_api = f"{base}/issues/{number}"
+        item = fetch_review_resource(issue_api, token)
+        if item is None or not is_clean_candidate(item) or is_meta_alert(item):
+            continue
+        classification = classify_candidate(item)
+        if classification["economic_status"] not in COMMENT_REVIEW_STATUSES or classification["fit"] == "LOW":
+            continue
+        comments = fetch_review_resource(issue_api + "/comments", token, collection=True)
+        timeline = fetch_review_resource(issue_api + "/timeline", token, collection=True)
+        if comments is None or timeline is None:
+            continue
+        pr_urls = set()
+        for event in timeline:
+            source = (event.get("source") or {}).get("issue") or {}
+            if event.get("event") == "cross-referenced" and source.get("pull_request"):
+                pr_urls.add(source.get("html_url", ""))
+        for comment in comments:
+            body = str(comment.get("body") or "")
+            for pr_number in re.findall(r"\b(?:resolved in|implementation|submitted)\s+(?:pr|pull request)\s*#(\d+)\b", body, re.I):
+                pr_urls.add(f"https://github.com/{repo}/pull/{pr_number}")
+        blocked = False
+        for pr_url in sorted(pr_urls):
+            pr_match = re.fullmatch(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)", pr_url)
+            if not pr_match:
+                continue
+            pr_repo, pr_number = pr_match.groups()
+            pr = fetch_review_resource(f"https://api.github.com/repos/{pr_repo}/pulls/{pr_number}", token)
+            if pr is None:
+                blocked = True
+                break
+            if pr.get("state") != "open" and not pr.get("merged_at"):
+                continue  # Abandoned implementation does not occupy a bounty.
+            body = str(pr.get("body") or "")
+            target = rf"(?:{re.escape(bounty['url'])}|{re.escape(repo)}#{number}\b"
+            if pr_repo.lower() == repo.lower():
+                target += rf"|#{number}\b"
+            target += ")"
+            if re.search(rf"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+{target}", body, re.I):
+                blocked = True
+                break
+        if blocked:
+            continue
+        bounty.update(classification)
+        bounty.update(title=item.get("title"), comments=item.get("comments", 0),
+                      updated_at=item.get("updated_at"), _reviewed_comments=comments)
+        retained.append(bounty)
+    return retained
+
+
 def review_finalist_comments(new_bounties, github_token, seen_urls):
     """Review comments for a bounded number of top candidates before alerting."""
     sort_bounties(new_bounties)
@@ -430,10 +554,12 @@ def review_finalist_comments(new_bounties, github_token, seen_urls):
         if (
             checked < COMMENT_REVIEW_LIMIT
             and bounty["economic_status"] in COMMENT_REVIEW_STATUSES
-            and int(bounty.get("comments") or 0) > 0
+            and (int(bounty.get("comments") or 0) > 0 or bounty.get("_reviewed_comments"))
         ):
             checked += 1
-            comments = fetch_issue_comments(bounty.get("comments_url"), github_token)
+            comments = bounty.get("_reviewed_comments")
+            if comments is None:
+                comments = fetch_issue_comments(bounty.get("comments_url"), github_token)
             comment_status = classify_comment_status(comments)
             if comment_status:
                 bounty["economic_status"] = comment_status
@@ -441,6 +567,8 @@ def review_finalist_comments(new_bounties, github_token, seen_urls):
 
         if bounty["economic_status"] in SUPPRESSED_ECONOMIC_STATUSES:
             seen_urls.add(bounty["url"])
+            continue
+        if bounty["economic_status"] == "UNKNOWN":
             continue
         retained.append(bounty)
 
@@ -479,6 +607,9 @@ def main():
                 continue
 
             classification = classify_candidate(item)
+            # Reconsider unpaid work on a later scan if a reward is added.
+            if classification["economic_status"] == "UNKNOWN":
+                continue
             if classification["fit"] == "LOW":
                 seen_urls.add(url)
                 continue
@@ -496,6 +627,7 @@ def main():
                 **classification,
             })
 
+    new_bounties = refresh_finalists(new_bounties, github_token)
     new_bounties = review_finalist_comments(new_bounties, github_token, seen_urls)
 
     if not new_bounties:

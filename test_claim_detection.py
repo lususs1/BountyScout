@@ -45,7 +45,8 @@ class StandaloneClaimDetectionTests(unittest.TestCase):
                 patch.object(scout, "create_github_issue", create_issue),
                 patch.dict(os.environ, env, clear=True),
             ):
-                scout.main()
+                with patch.object(scout, "refresh_finalists", side_effect=lambda items, token: items):
+                    scout.main()
 
             with open(state_file, "r", encoding="utf-8") as fh:
                 saved = json.load(fh)
