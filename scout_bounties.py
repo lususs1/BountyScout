@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
@@ -192,6 +193,24 @@ def classify_economic_status(text, payment_hits, label_names=None):
     """Classify whether a candidate is actually actionable economic work."""
     label_names = set(label_names or [])
 
+    if any(re.fullmatch(r"status\s*:\s*claimed", label) for label in label_names):
+        return "CLAIMED"
+
+    if re.search(
+        r"\b(?:this (?:project|repo(?:sitory)?|issue) (?:has|offers) no bounties|"
+        r"no bounty (?:is |will be )?(?:offered|available)|"
+        r"(?:we|this project|this repository) (?:do not|does not|don't|doesn't) offer bounties)\b",
+        text,
+    ):
+        return "NOT_AN_OFFER"
+
+    title = text.splitlines()[0] if text else ""
+    if re.search(r"\b(?:question|proof)\b", title) and re.search(
+        r"\b(?:proof of (?:contributor )?payments|contributors have actually been paid)\b",
+        text,
+    ) and not re.search(r"(?:\$|\busd\s*)\s*\d", text + " " + " ".join(label_names)):
+        return "NOT_AN_OFFER"
+
     already_implemented_terms = [
         "implementation pr:",
         "implementation pull request:",
@@ -310,6 +329,11 @@ def classify_candidate(item):
     title = str(item.get("title", ""))
     body = str(item.get("body", ""))
     text = (title + "\n" + body).lower()
+    # Opire's help block describes commands, not a reward on this issue.
+    text = re.sub(
+        r"<details\b[^>]*>\s*<summary[^>]*>this repo is using opire\b.*?</details>",
+        "", text, flags=re.DOTALL,
+    )
     comments = int(item.get("comments", 0))
     label_names = extract_label_names(item)
 
@@ -442,6 +466,8 @@ def review_finalist_comments(new_bounties, github_token, seen_urls):
         if bounty["economic_status"] in SUPPRESSED_ECONOMIC_STATUSES:
             seen_urls.add(bounty["url"])
             continue
+        if bounty["economic_status"] == "UNKNOWN":
+            continue
         retained.append(bounty)
 
     sort_bounties(retained)
@@ -479,6 +505,9 @@ def main():
                 continue
 
             classification = classify_candidate(item)
+            # Reconsider unpaid work on a later scan if a reward is added.
+            if classification["economic_status"] == "UNKNOWN":
+                continue
             if classification["fit"] == "LOW":
                 seen_urls.add(url)
                 continue
